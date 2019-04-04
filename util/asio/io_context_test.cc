@@ -70,11 +70,13 @@ class CancelImpl final : public IoContext::Cancellable {
   void Run() override {
     fb_ = fibers::fiber([this] {
       while (!cancel_) {
+        VLOG(1) << "Before sleep_for infiber";
         this_fiber::sleep_for(10ms);
       }
     });
 
     while (!cancel_) {
+      VLOG(1) << "Before sleep_for";
       this_fiber::sleep_for(1ms);
     }
     finished_ = true;
@@ -166,6 +168,7 @@ TEST_F(IoContextTest, AttachCancellableStopFromMain) {
   bool cancellable_finished = false;
   IoContext& cntx = pool_->GetNextContext();
   cntx.AttachCancellable(new CancelImpl(&cancellable_finished));
+  VLOG(1) << "After AttachCancellable";
 
   pool_->Stop();
   EXPECT_TRUE(cancellable_finished);
@@ -244,6 +247,31 @@ TEST_F(IoContextTest, AwaitOnAll) {
   }
 }
 
+TEST_F(IoContextTest, YieldInIO) {
+  IoContext& cntx = pool_->GetNextContext();
+  constexpr unsigned kSz = 5;
+  fibers::fiber fbs[kSz];
+
+  std::atomic_bool cancel{false};
+  fibers_ext::Done launched;
+  auto cb = [&] {
+    launched.Notify();
+    while (!cancel) {
+      this_fiber::yield();
+    }
+  };
+
+  for (unsigned i = 0; i < kSz; ++i) {
+    VLOG(1) << "Iter " << i;
+    fbs[i] = cntx.LaunchFiber(cb);
+  }
+  launched.Wait();
+  cancel = true;
+  for (unsigned i = 0; i < kSz; ++i) {
+    fbs[i].join();
+  }
+}
+
 static void BM_RunOneNoLock(benchmark::State& state) {
   io_context cntx(1);  // no locking
 
@@ -270,7 +298,25 @@ static void BM_RunOneNoLock(benchmark::State& state) {
 BENCHMARK(BM_RunOneNoLock)->Range(1, 64);
 
 static void BM_PickOne(benchmark::State& state) {
+  IoContextPool pool(1);
+  pool.Run();
+  IoContext& cntx = pool.GetNextContext();
+  bool cancel = false;
+  std::atomic<size_t> items{0};
+  fibers::fiber fb = cntx.LaunchFiber([&] {
+    while (!cancel) {
+      items.fetch_add(1, std::memory_order_relaxed);
+      this_fiber::yield();
+    }
+  });
+  LOG(INFO) << "After launching fiber/yield";
+  while (state.KeepRunning()) {
+    cntx.Await([]{});
+  }
+  cancel = true;
+  fb.join();
+  state.SetItemsProcessed(items.load());
 }
-BENCHMARK(BM_PickOne);
+BENCHMARK(BM_PickOne)->UseRealTime();
 
 }  // namespace util
