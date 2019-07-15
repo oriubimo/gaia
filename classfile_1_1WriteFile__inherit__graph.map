@@ -1,0 +1,5 @@
+<map id="file::WriteFile" name="file::WriteFile">
+<area shape="rect" id="node2" href="$classfile_1_1GzipFile.html" title="file::GzipFile" alt="" coords="5,80,101,107"/>
+<area shape="rect" id="node3" href="$classfile_1_1LZ4File.html" title="file::LZ4File" alt="" coords="125,80,219,107"/>
+<area shape="rect" id="node4" href="$classfile_1_1NullFile.html" title="file::NullFile" alt="" coords="243,80,335,107"/>
+</map>
